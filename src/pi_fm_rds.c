@@ -194,11 +194,6 @@
 
 #define GPFSEL0            (0x00/4)
 
-// The deviation specifies how wide the signal is. Use 25.0 for WBFM
-// (broadcast radio) and about 3.5 for NBFM (walkie-talkie style radio)
-#define DEVIATION        3.5
-
-
 typedef struct {
     uint32_t info, src, dst, length,
          stride, next, pad[2];
@@ -276,10 +271,22 @@ fatal(char *fmt, ...)
 {
     va_list ap;
 
+    fprintf(stderr, "Fatal error: ");
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     terminate(0);
+}
+
+static void
+warn(char *fmt, ...)
+{
+    va_list ap;
+
+    fprintf(stderr, "Warning: ");
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
 }
 
 static size_t
@@ -318,7 +325,7 @@ map_peripheral(uint32_t base, uint32_t len)
 #define DATA_SIZE 5000
 
 
-int tx(uint32_t carrier_freq, char *audio_file, uint16_t pi, char *ps, char *rt, float ppm, char *control_pipe) {
+int tx(uint32_t carrier_freq, char *audio_file, uint16_t pi, char *ps, char *rt, float ppm, char *control_pipe, float deviation) {
     // Catch all signals possible - it is vital we kill the DMA engine
     // on process exit!
     for (int i = 0; i < 64; i++) {
@@ -526,7 +533,7 @@ int tx(uint32_t carrier_freq, char *audio_file, uint16_t pi, char *ps, char *rt,
                 data_index = 0;
             }
 
-            float dval = data[data_index] * (DEVIATION / 10.);
+            float dval = data[data_index] * (deviation / 10.);
             data_index++;
             data_len--;
 
@@ -555,7 +562,7 @@ int main(int argc, char **argv) {
     char *rt = "PiFmRds: live FM-RDS transmission from the RaspberryPi";
     uint16_t pi = 0x1234;
     float ppm = 0;
-
+    float deviation = 25.0;
 
     // Parse command-line arguments
     for(int i=1; i<argc; i++) {
@@ -571,7 +578,7 @@ int main(int argc, char **argv) {
             i++;
             carrier_freq = 1e6 * atof(param);
             if(carrier_freq < 76e6 || carrier_freq > 108e6)
-                fatal("Incorrect frequency specification. Must be in megahertz, of the form 107.9, between 76 and 108.\n");
+                warn("Frequency out of range: %.1f MHz.\n", atof(param));
         } else if(strcmp("-pi", arg)==0 && param != NULL) {
             i++;
             pi = (uint16_t) strtol(param, NULL, 16);
@@ -587,10 +594,13 @@ int main(int argc, char **argv) {
         } else if(strcmp("-ctl", arg)==0 && param != NULL) {
             i++;
             control_pipe = param;
+        } else if(strcmp("-dev", arg)==0 && param != NULL) {
+            i++;
+            deviation = atof(param);
         } else {
             fatal("Unrecognised argument: %s.\n"
             "Syntax: pi_fm_rds [-freq freq] [-audio file] [-ppm ppm_error] [-pi pi_code]\n"
-            "                  [-ps ps_text] [-rt rt_text] [-ctl control_pipe]\n", arg);
+            "                  [-ps ps_text] [-rt rt_text] [-ctl control_pipe] [-dev deviation]\n", arg);
         }
     }
 
@@ -599,7 +609,7 @@ int main(int argc, char **argv) {
     char* locale = setlocale(LC_ALL, "");
     printf("Locale set to %s.\n", locale);
 
-    int errcode = tx(carrier_freq, audio_file, pi, ps, rt, ppm, control_pipe);
+    int errcode = tx(carrier_freq, audio_file, pi, ps, rt, ppm, control_pipe, deviation);
 
     terminate(errcode);
 }
